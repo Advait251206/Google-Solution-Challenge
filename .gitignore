@@ -1,0 +1,17 @@
+
+.env
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.streamlit/
+
+.idea/
+.vscode/
+*.idx/
+
+.DS_Store
+Thumbs.db
+
+*.log
