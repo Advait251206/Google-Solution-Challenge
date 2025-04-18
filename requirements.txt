@@ -6,3 +6,6 @@ langchain-google-genai
 pandas
 folium
 streamlit-folium
+google-generativeai
+gTTS
+geopy
