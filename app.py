@@ -1,29 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-streamlit_app.py
-Log.csv
-Streamlit web application for Krishi-Sahayak AI Demo.
-Features:
-- Farmer profile management via sorted CSV with fixed columns.
-- Dynamic site language selection affecting UI and AI output.
-- UI Language automatically switches to farmer's preference on load/save/edit.
-- Uses Langchain & Gemini for tailored AI responses based on SESSION chat history,
-  with an enhanced prompting strategy for more detailed and contextual answers.
-- Provides a multi-day weather forecast summary.
-- Includes dropdown for soil type in new profile form.
-- Shows temporary toast message if trying to create existing profile.
-- Logs questions and answers to Log.csv.
-- Displays current chat session using st.chat_message.
-- Provides a tab to view all past interactions for the loaded farmer from Log.csv.
-- Location Selection: Interactive Map with Search (Top Right) and Click-to-Display Coordinates + Manual Coordinate Entry.
-  * Zoom controls remain default (Top Left), preventing overlap with Search bar.
-- Debug information (internal prompt) is hidden from the user interface.
-- Past Interactions display uses smaller, structured text via <small> HTML tags.
-- Edit Profile Tab: Allows editing the currently loaded profile.
-- Text-to-Speech: Provides an audio playback button for AI responses in the farmer's preferred language.
-"""
-
-# --- CORE IMPORTS ---
 import streamlit as st
 import os
 import datetime
@@ -33,11 +7,10 @@ import pandas as pd
 from dotenv import load_dotenv
 import logging
 from collections import defaultdict
-import io # Required for TTS byte streams
+import io
 
-# --- THIRD-PARTY IMPORTS ---
 import folium
-from folium.plugins import Geocoder # Import Geocoder for search functionality
+from folium.plugins import Geocoder
 
 try:
     from streamlit_folium import st_folium
@@ -45,28 +18,23 @@ except ImportError:
      st.error("Required libraries `folium` and `streamlit-folium` not found. Install: `pip install folium streamlit-folium`")
      st.stop()
 
-# --- Langchain & Gemini Specific Imports ---
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage # Import message types
-    # from langchain_core.prompts import ChatPromptTemplate # We build messages manually here
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
     LANGCHAIN_AVAILABLE = True
 except ImportError:
-    st.error("Required library `langchain-google-genai` not found. Install: `pip install langchain-google-genai pandas streamlit-folium folium python-dotenv requests gTTS`") # Added gTTS to error
+    st.error("Required library `langchain-google-genai` not found. Install: `pip install langchain-google-genai pandas streamlit-folium folium python-dotenv requests gTTS`")
     LANGCHAIN_AVAILABLE = False
     st.stop()
 
-# --- Text-to-Speech Imports ---
 try:
     from gtts import gTTS
     GTTS_AVAILABLE = True
 except ImportError:
     st.error("Required library `gTTS` not found for audio playback. Install: `pip install gTTS`")
     GTTS_AVAILABLE = False
-    # We don't stop the app if gTTS is missing, just disable the feature
 
 
-# --- Constants and Setup ---
 load_dotenv()
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -91,9 +59,7 @@ SOIL_TYPES = [
     "Sandy Clay", "Silty Clay", "Sandy Soil", "Silty Soil", "Clay Soil", "Chalky Soil", "Other"
 ]
 
-# --- TTS Language Mapping ---
-# Maps UI Language Names to gTTS Language Codes (ISO 639-1)
-# See gTTS docs or `gtts-cli --all` for supported codes
+
 TTS_LANG_MAP = {
     "English": "en",
     "Hindi": "hi",
@@ -101,11 +67,9 @@ TTS_LANG_MAP = {
     "Bengali": "bn",
     "Telugu": "te",
     "Marathi": "mr",
-    # Add more mappings as needed for supported UI languages
 }
 
-# --- Translations Dictionary ---
-# Includes keys for advanced prompts and improved UI elements
+
 translations = {
     "English": {
         "page_title": "Krishi-Sahayak AI", "page_caption": "AI-Powered Agricultural Advice", "sidebar_config_header": "⚙️ Configuration",
@@ -118,7 +82,7 @@ translations = {
         "location_method_label": "Set Farm Location",
         "loc_method_map": "Set Location Manually (Use Map for Reference)",
         "latitude_label": "Latitude", "longitude_label": "Longitude",
-        "map_instructions": "Use map search (top-right) or click the map to find coordinates for reference. Enter them manually below.", # Updated instruction
+        "map_instructions": "Use map search (top-right) or click the map to find coordinates for reference. Enter them manually below.",
         "map_click_reference": "Map Click Coordinates (Reference):",
         "selected_coords_label": "Farm Coordinates (Enter Manually):",
         "farm_size_label": "Farm Size (Hectares)", "save_profile_button": "Save New Profile",
@@ -127,17 +91,16 @@ translations = {
         "no_profile_loaded_info": "No farmer profile loaded. Enter a name and load or create.", "sidebar_output_header": "🌐 Language Settings", "select_language_label": "Select Site & Response Language",
         "tab_new_chat": "💬 New Chat", "tab_past_interactions": "📜 Past Interactions", "tab_edit_profile": "✏️ Edit Profile",
         "main_header": "Chat with Krishi-Sahayak AI", "query_label": "Enter your question:", "get_advice_button": "Send",
-        "thinking_spinner": "🤖 Analyzing & Generating Advice in {lang}...", # Updated spinner text
+        "thinking_spinner": "🤖 Analyzing & Generating Advice in {lang}...",
         "advice_header": "💡 Advice for {name} (in {lang})",
         "profile_error": "❌ Please load or create a farmer profile first using the sidebar.", "query_warning": "⚠️ Please enter a question.", "gemini_key_error": "❌ Please enter your Google Gemini API Key in the sidebar.",
         "processing_error": "A critical error occurred during processing: {e}", "llm_init_error": "Could not initialize the AI model. Check the API key and try again.",
         "debug_prompt_na": "N/A",
-        "intent_crop": "Farmer Query Intent: Crop Recommendation Request", # More specific
+        "intent_crop": "Farmer Query Intent: Crop Recommendation Request",
         "intent_market": "Farmer Query Intent: Market Price Inquiry",
         "intent_weather": "Farmer Query Intent: Weather Forecast & Implications Request",
         "intent_health": "Farmer Query Intent: Plant Health/Problem Diagnosis",
         "intent_general": "Farmer Query Intent: General Farming Question",
-        # Keys for context data framing (used in process_farmer_request)
         "context_header_weather": "--- Relevant Weather Data for {location} (Interpret for Farmer) ---",
         "context_footer_weather": "--- End Weather Data ---",
         "context_weather_unavailable": "Weather Forecast Unavailable: {error_msg}",
@@ -154,29 +117,26 @@ translations = {
         "context_header_general": "--- General Query Context ---",
         "context_data_general": "Farmer Question: '{query}'. (Provide a comprehensive agricultural answer based on profile/history/general knowledge.)",
         "context_footer_general": "--- End General Query Context ---",
-
-        # Old/Simple data representation (fallback or comparison if needed, but not primary)
         "crop_suggestion_data": "Crop Suggestion Data: Based on soil '{soil}' in season '{season}', consider: {crops}.",
         "market_price_data": "Market Price Data for {crop} in {market}: Expected price range (per quintal) over next {days} days: {price_start:.2f} to {price_end:.2f}. Trend: {trend}",
         "weather_data_header": "Weather Forecast Data for {location} (Next ~5 days):",
         "weather_data_error": "Weather Forecast Error: {message}",
         "plant_health_data": "Plant Health Data (Placeholder): Finding: '{disease}' ({confidence:.0%} confidence). Suggestion: {treatment}",
         "general_query_data": "Farmer Query: '{query}'. Provide a concise agricultural answer based on general knowledge.",
-
         "farmer_context_data": "Farmer Context: Name: {name}, Location: {location_description}, Soil: {soil}, Farm Size: {size}.",
-        "session_history_header": "Current Conversation History:", # No change needed
-        "session_history_entry": "{role} ({lang}): {query}\n", # No change needed
+        "session_history_header": "Current Conversation History:",
+        "session_history_entry": "{role} ({lang}): {query}\n",
         "location_set_description": "Farm Near {lat:.2f},{lon:.2f}",
         "location_not_set_description": "Location Not Set",
-        "past_interactions_header": "All Past Interactions for {name}", # No change needed
-        "log_entry_display": "<small>**Timestamp:** {timestamp}<br>**Query:** {query}<br>**Answer ({lang}):** {response}</small>\n\n---\n", # No change needed
+        "past_interactions_header": "All Past Interactions for {name}",
+        "log_entry_display": "<small>**Timestamp:** {timestamp}<br>**Query:** {query}<br>**Answer ({lang}):** {response}</small>\n\n---\n",
         "no_past_interactions": "No past interactions logged for this farmer.",
         "system_error_label": "System Error", "log_file_corrupt_columns": "Error: Past interactions log file ({path}) is missing expected columns: {cols}. Please check or recreate the file.",
         "error_displaying_logs": "Error reading or displaying past interactions: {error}", "profile_reload_error_after_save": "Internal error: Could not reload profile immediately after saving/updating. Please try loading it manually.",
         "db_update_error_on_save": "Internal error: Failed to update the profile database.", "map_click_invalid_coords_message": "Invalid reference coordinates stored. Click the map again.",
         "map_click_prompt_message": "Click map to get coordinates for reference.", "weather_error_summary_generation": "Could not generate daily forecast summary from the retrieved weather data.",
         "conditions_unclear": "Conditions unclear", "value_na": "N/A", "label_today": "Today", "label_tomorrow": "Tomorrow",
-        "weather_rain_display": f" Rain: {{value:.1f}}mm", # Specific format
+        "weather_rain_display": f" Rain: {{value:.1f}}mm",
         "weather_alerts_display": f". Alerts: {{alerts_joined}}",
         "weather_error_401": "Weather Forecast Error: Invalid API Key (Unauthorized). Please check the key in the sidebar.",
         "weather_error_404": "Weather Forecast Error: Location not found by the weather service.",
@@ -186,19 +146,17 @@ translations = {
         "weather_error_unexpected": "An unexpected error occurred while getting or processing weather data: {error}",
         "weather_error_unknown": "Could not get weather forecast (unknown reason).",
         "your_area": "your area", "unknown_farmer": "Unknown Farmer", "not_set_label": "Not Set",
-        "invalid_date_label": "Invalid Date", "no_crops_recommendation": "None specific recommended based on initial analysis.", # Slightly updated text
+        "invalid_date_label": "Invalid Date", "no_crops_recommendation": "None specific recommended based on initial analysis.",
         "edit_profile_header": "Edit Profile for {name}", "save_changes_button": "Save Changes", "profile_updated_success": "Profile for {name} updated successfully.",
         "profile_name_edit_label": "Farmer Name (Cannot be changed)",
-        "tts_button_label": "▶️ Play Audio", # No change needed
-        "tts_button_tooltip": "Read aloud in {lang}", # No change needed
-        "tts_generating_spinner": "Generating audio in {lang}...", # No change needed
-        "tts_error_generation": "Could not generate audio: {err}", # No change needed
-        "tts_error_unsupported_lang": "Audio playback not supported for {lang}", # No change needed
-        "tts_error_library_missing": "Audio library (gTTS) not installed.", # No change needed
+        "tts_button_label": "▶️ Play Audio",
+        "tts_button_tooltip": "Read aloud in {lang}",
+        "tts_generating_spinner": "Generating audio in {lang}...",
+        "tts_error_generation": "Could not generate audio: {err}",
+        "tts_error_unsupported_lang": "Audio playback not supported for {lang}",
+        "tts_error_library_missing": "Audio library (gTTS) not installed.",
     },
     "Hindi": {
-        # NOTE: Hindi translations for the new context keys need review/addition. Using English for now as placeholders.
-        # This highlights the need for consistent translation updates.
         "page_title": "कृषि-सहायक एआई", "page_caption": "एआई-संचालित कृषि सलाह", "sidebar_config_header": "⚙️ सेटिंग",
         "gemini_key_label": "गूगल जेमिनी एपीआई कुंजी", "gemini_key_help": "एआई प्रतिक्रियाओं के लिए आवश्यक।", "weather_key_label": "ओपनवेदरमैप एपीआई कुंजी",
         "weather_key_help": "मौसम पूर्वानुमान के लिए आवश्यक।", "sidebar_profile_header": "👤 किसान प्रोफाइल", "farmer_name_label": "किसान का नाम दर्ज करें", "load_profile_button": "प्रोफ़ाइल लोड करें",
@@ -217,17 +175,16 @@ translations = {
         "no_profile_loaded_info": "कोई किसान प्रोफ़ाइल लोड नहीं हुई। नाम दर्ज करें और लोड करें या बनाएं।", "sidebar_output_header": "🌐 भाषा सेटिंग्स", "select_language_label": "साइट और प्रतिक्रिया भाषा चुनें",
         "tab_new_chat": "💬 नई चैट", "tab_past_interactions": "📜 पिछली बातचीत", "tab_edit_profile": "✏️ प्रोफ़ाइल संपादित करें",
         "main_header": "कृषि-सहाय्यक एआई के साथ चैट करें", "query_label": "अपना प्रश्न दर्ज करें:", "get_advice_button": "भेजें",
-        "thinking_spinner": "🤖 विश्लेषण और {lang} में सलाह उत्पन्न हो रही है...", # Updated spinner
+        "thinking_spinner": "🤖 विश्लेषण और {lang} में सलाह उत्पन्न हो रही है...",
         "advice_header": "💡 {name} के लिए सलाह ({lang} में)",
         "profile_error": "❌ कृपया पहले साइडबार का उपयोग करके किसान प्रोफ़ाइल लोड करें या बनाएं।", "query_warning": "⚠️ कृपया एक प्रश्न दर्ज करें।", "gemini_key_error": "❌ कृपया साइडबार में अपनी गूगल जेमिनी एपीआई कुंजी दर्ज करें।",
         "processing_error": "प्रसंस्करण के दौरान एक गंभीर त्रुटि हुई: {e}", "llm_init_error": "एआई मॉडल को इनिशियलाइज़ नहीं किया जा सका। एपीआई कुंजी जांचें और पुनः प्रयास करें।",
         "debug_prompt_na": "लागू नहीं",
-        "intent_crop": "किसान प्रश्न इरादा: फसल सिफारिश अनुरोध", # Updated
+        "intent_crop": "किसान प्रश्न इरादा: फसल सिफारिश अनुरोध",
         "intent_market": "किसान प्रश्न इरादा: बाजार मूल्य पूछताछ",
         "intent_weather": "किसान प्रश्न इरादा: मौसम पूर्वानुमान और प्रभाव अनुरोध",
         "intent_health": "किसान प्रश्न इरादा: पौधे का स्वास्थ्य/समस्या निदान",
         "intent_general": "किसान प्रश्न इरादा: सामान्य खेती का प्रश्न",
-        # Context Framing Keys - ** NEEDS HINDI TRANSLATION **
         "context_header_weather": "--- प्रासंगिक मौसम डेटा {location} के लिए (किसान के लिए व्याख्या करें) ---",
         "context_footer_weather": "--- मौसम डेटा समाप्त ---",
         "context_weather_unavailable": "मौसम पूर्वानुमान अनुपलब्ध: {error_msg}",
@@ -244,13 +201,12 @@ translations = {
         "context_header_general": "--- सामान्य प्रश्न संदर्भ ---",
         "context_data_general": "किसान का प्रश्न: '{query}'। (प्रोफ़ाइल/इतिहास/सामान्य ज्ञान के आधार पर व्यापक कृषि उत्तर प्रदान करें।)",
         "context_footer_general": "--- सामान्य प्रश्न संदर्भ समाप्त ---",
-        # Fallback/Old data keys
         "crop_suggestion_data": "फसल सुझाव डेटा: '{soil}' मिट्टी और '{season}' मौसम के आधार पर, इन पर विचार करें: {crops}.",
         "market_price_data": "{crop} के लिए {market} में बाजार मूल्य डेटा: अगले {days} दिनों में अपेक्षित मूल्य सीमा (प्रति क्विंटल): {price_start:.2f} से {price_end:.2f} तक। रुझान: {trend}",
         "weather_data_header": "{location} के पास मौसम पूर्वानुमान डेटा (अगले ~5 दिन):", "weather_data_error": "मौसम पूर्वानुमान त्रुटि: {message}",
         "plant_health_data": "पौधों का स्वास्थ्य डेटा (प्लेसहोल्डर): निष्कर्ष: '{disease}' ({confidence:.0%} विश्वास)। सुझाव: {treatment}",
         "general_query_data": "किसान का प्रश्न: '{query}'. सामान्य ज्ञान के आधार पर संक्षिप्त कृषि उत्तर प्रदान करें।",
-        "farmer_context_data": "किसान संदर्भ: नाम: {name}, स्थान: {location_description}, मिट्टी: {soil}, खेत का आकार: {size}.", # Updated size label
+        "farmer_context_data": "किसान संदर्भ: नाम: {name}, स्थान: {location_description}, मिट्टी: {soil}, खेत का आकार: {size}.",
         "session_history_header": "वर्तमान बातचीत का इतिहास:",
         "session_history_entry": "{role} ({lang}): {query}\n",
         "location_set_description": "खेत {lat:.2f},{lon:.2f} के पास", "location_not_set_description": "स्थान निर्धारित नहीं है",
@@ -271,29 +227,25 @@ translations = {
         "weather_error_unexpected": "मौसम डेटा प्राप्त करते या संसाधित करते समय एक अप्रत्याशित त्रुटि हुई: {error}",
         "weather_error_unknown": "मौसम पूर्वानुमान प्राप्त नहीं किया जा सका (अज्ञात कारण)।",
         "your_area": "आपका क्षेत्र", "unknown_farmer": "अज्ञात किसान", "not_set_label": "सेट नहीं",
-        "invalid_date_label": "अमान्य तारीख", "no_crops_recommendation": "प्रारंभिक विश्लेषण के आधार पर कोई विशिष्ट सुझाव नहीं दिया गया।", # Updated text
+        "invalid_date_label": "अमान्य तारीख", "no_crops_recommendation": "प्रारंभिक विश्लेषण के आधार पर कोई विशिष्ट सुझाव नहीं दिया गया।",
         "edit_profile_header": "{name} के लिए प्रोफ़ाइल संपादित करें", "save_changes_button": "बदलाव सहेजें", "profile_updated_success": "{name} के लिए प्रोफ़ाइल सफलतापूर्वक अपडेट की गई।",
         "profile_name_edit_label": "किसान का नाम (बदला नहीं जा सकता)",
         "tts_button_label": "▶️ ऑडियो चलाएं", "tts_button_tooltip": "{lang} में जोर से पढ़ें",
         "tts_generating_spinner": "{lang} में ऑडियो बना रहा हूँ...", "tts_error_generation": "ऑडियो बनाने में विफल: {err}",
         "tts_error_unsupported_lang": "{lang} के लिए ऑडियो प्लेबैक समर्थित नहीं है", "tts_error_library_missing": "ऑडियो लाइब्रेरी (gTTS) स्थापित नहीं है।",
     },
-    # ... [Existing Tamil, Bengali, Telugu, Marathi translations - These would ALSO need updates for new context keys] ...
-    # --> NOTE: Keep all other language dictionaries here, acknowledging they might be missing new keys
      "Tamil": {
-        # ... [Keep existing Tamil translations] ...
-        # NEEDS TAMIL UPDATES for context keys + spinner text
         "edit_profile_header": "{name} க்கான சுயவிவரத்தைத் திருத்து",
         "save_changes_button": "மாற்றங்களைச் சேமி",
         "profile_updated_success": "{name} க்கான சுயவிவரம் வெற்றிகரமாகப் புதுப்பிக்கப்பட்டது.",
         "profile_name_edit_label": "விவசாயி பெயர் (மாற்ற முடியாது)",
         "loc_method_map": "இருப்பிடத்தை கைமுறையாக அமைக்கவும் (குறிப்புக்கு வரைபடத்தைப் பயன்படுத்தவும்)",
-        "map_instructions": "குறிப்புகளைக் கண்டறிய வரைபடத் தேடலைப் பயன்படுத்தவும் (மேல்-வலது) அல்லது வரைபடத்தில் கிளிக் செய்யவும். கீழே அவற்றை கைமுறையாக உள்ளிடவும்.", # Updated instruction
+        "map_instructions": "குறிப்புகளைக் கண்டறிய வரைபடத் தேடலைப் பயன்படுத்தவும் (மேல்-வலது) அல்லது வரைபடத்தில் கிளிக் செய்யவும். கீழே அவற்றை கைமுறையாக உள்ளிடவும்.",
         "map_click_reference": "வரைபட கிளிக் ஒருங்கிணைப்புகள் (குறிப்பு):",
         "selected_coords_label": "பண்ணை ஒருங்கிணைப்புகள் (கைமுறையாக உள்ளிடவும்):",
-        "location_set_description": "பண்ணை {lat:.2f},{lon:.2f} அருகில்", # Updated
+        "location_set_description": "பண்ணை {lat:.2f},{lon:.2f} அருகில்",
         "location_not_set_description": "இருப்பிடம் அமைக்கப்படவில்லை",
-        "farmer_context_data": "விவசாயி சூழல்: பெயர்: {name}, இருப்பிடம்: {location_description}, மண்: {soil}, பண்ணை அளவு: {size}.", # Updated
+        "farmer_context_data": "விவசாயி சூழல்: பெயர்: {name}, இருப்பிடம்: {location_description}, மண்: {soil}, பண்ணை அளவு: {size}.",
         "page_caption": "AI-உந்துதல் விவசாய ஆலோசனை", "sidebar_config_header": "⚙️ கட்டமைப்பு",
         "gemini_key_label": "கூகுள் ஜெமினி API கீ", "gemini_key_help": "AI பதில்களுக்குத் தேவை.",
         "weather_key_label": "OpenWeatherMap API கீ", "weather_key_help": "வானிலை முன்னறிவிப்புகளுக்குத் தேவை.",
@@ -317,7 +269,7 @@ translations = {
         "tab_new_chat": "💬 புதிய அரட்டை", "tab_past_interactions": "📜 கடந்த உரையாடல்கள்", "tab_edit_profile": "✏️ சுயவிவரத்தைத் திருத்து",
         "main_header": "கிருஷி-சஹாயக் AI உடன் அரட்டையடிக்கவும்", "query_label": "உங்கள் கேள்வியை உள்ளிடவும்:",
         "get_advice_button": "அனுப்பு",
-        "thinking_spinner": "🤖 ஆய்வுசெய்து & {lang} மொழியில் ஆலோசனையை உருவாக்குகிறேன்...", # Updated
+        "thinking_spinner": "🤖 ஆய்வுசெய்து & {lang} மொழியில் ஆலோசனையை உருவாக்குகிறேன்...",
         "advice_header": "💡 {name} க்கான ஆலோசனை ({lang} இல்)",
         "profile_error": "❌ முதலில் பக்கப்பட்டியைப் பயன்படுத்தி விவசாயி சுயவிவரத்தை ஏற்றவும் அல்லது உருவாக்கவும்.",
         "query_warning": "⚠️ தயவுசெய்து ஒரு கேள்வியை உள்ளிடவும்.",
@@ -329,7 +281,6 @@ translations = {
         "intent_weather": "விவசாயி வினவல் நோக்கம்: வானிலை முன்னறிவிப்பு & தாக்கங்கள் கோரிக்கை",
         "intent_health": "விவசாயி வினவல் நோக்கம்: பயிர் சுகாதாரம்/பிரச்சனை கண்டறிதல்",
         "intent_general": "விவசாயி வினவல் நோக்கம்: பொது விவசாய கேள்வி",
-        # Context Framing Keys - ** NEEDS TAMIL TRANSLATION **
         "context_header_weather": "--- Relevant Weather Data for {location} (Interpret for Farmer) ---",
         "context_footer_weather": "--- End Weather Data ---",
         "context_weather_unavailable": "Weather Forecast Unavailable: {error_msg}",
@@ -346,14 +297,10 @@ translations = {
         "context_header_general": "--- General Query Context ---",
         "context_data_general": "Farmer Question: '{query}'. (Provide a comprehensive agricultural answer based on profile/history/general knowledge.)",
         "context_footer_general": "--- End General Query Context ---",
-        # ... (keep existing Tamil translations, updating as needed)
-        "log_entry_display": "<small>**நேரம்:** {timestamp}<br>**கேள்வி:** {query}<br>**பதில் ({lang}):** {response}</small>\n\n---\n", # Updated format
+        "log_entry_display": "<small>**நேரம்:** {timestamp}<br>**கேள்வி:** {query}<br>**பதில் ({lang}):** {response}</small>\n\n---\n",
         "weather_rain_display": f" மழை: {{value:.1f}}மிமீ",
-        # ... (ensure all other needed keys are present)
     },
     "Bengali": {
-        # ... [Keep existing Bengali translations] ...
-         # NEEDS BENGALI UPDATES for context keys + spinner text
         "edit_profile_header": "{name} এর জন্য প্রোফাইল সম্পাদনা করুন",
         "save_changes_button": "পরিবর্তনগুলি সংরক্ষণ করুন",
         "profile_updated_success": "{name} এর জন্য প্রোফাইল সফলভাবে আপডেট করা হয়েছে।",
@@ -362,9 +309,9 @@ translations = {
         "map_instructions": "অক্ষাংশ/দ্রাঘিমাংশ রেফারেন্সের জন্য মানচিত্র অনুসন্ধান (উপরে-ডানদিকে) ব্যবহার করুন বা মানচিত্রে ক্লিক করুন। নীচে সেগুলি ম্যানুয়ালি লিখুন।",
         "map_click_reference": "মানচিত্র ক্লিকের স্থানাঙ্ক (রেফারেন্স):",
         "selected_coords_label": "খামারের স্থানাঙ্ক (ম্যানুয়ালি লিখুন):",
-        "location_set_description": "খামার {lat:.2f},{lon:.2f} এর কাছাকাছি", # Updated
+        "location_set_description": "খামার {lat:.2f},{lon:.2f} এর কাছাকাছি",
         "location_not_set_description": "অবস্থান সেট করা নেই",
-        "farmer_context_data": "কৃষক প্রসঙ্গ: নাম: {name}, অবস্থান: {location_description}, মাটি: {soil}, খামারের আকার: {size}.", # Updated
+        "farmer_context_data": "কৃষক প্রসঙ্গ: নাম: {name}, অবস্থান: {location_description}, মাটি: {soil}, খামারের আকার: {size}.",
         "page_caption": "এআই-চালিত কৃষি পরামর্শ", "sidebar_config_header": "⚙️ কনফিগারেশন",
         "gemini_key_label": "Google Gemini API কী", "gemini_key_help": "এআই প্রতিক্রিয়ার জন্য প্রয়োজনীয়।",
         "weather_key_label": "OpenWeatherMap API কী", "weather_key_help": "আবহাওয়ার পূর্বাভাসের জন্য প্রয়োজনীয়।",
@@ -387,7 +334,7 @@ translations = {
         "tab_new_chat": "💬 নতুন চ্যাট", "tab_past_interactions": "📜 অতীত মিথস্ক্রিয়া", "tab_edit_profile": "✏️ প্রোফাইল সম্পাদনা করুন",
         "main_header": "কৃষি-সহায়ক এআই-এর সাথে চ্যাট করুন", "query_label": "আপনার প্রশ্ন লিখুন:",
         "get_advice_button": "প্রেরণ করুন",
-        "thinking_spinner": "🤖 বিশ্লেষণ করছি এবং {lang} এ পরামর্শ তৈরি করছি...", # Updated
+        "thinking_spinner": "🤖 বিশ্লেষণ করছি এবং {lang} এ পরামর্শ তৈরি করছি...",
         "advice_header": "💡 {name} এর জন্য পরামর্শ ({lang} এ)",
         "profile_error": "❌ অনুগ্রহ করে সাইডবার ব্যবহার করে প্রথমে একজন কৃষকের প্রোফাইল লোড করুন বা তৈরি করুন।",
         "query_warning": "⚠️ অনুগ্রহ করে একটি প্রশ্ন লিখুন।",
@@ -399,7 +346,6 @@ translations = {
         "intent_weather": "কৃষকের প্রশ্নের উদ্দেশ্য: আবহাওয়ার পূর্বাভাস এবং প্রভাব জিজ্ঞাসা",
         "intent_health": "কৃষকের প্রশ্নের উদ্দেশ্য: উদ্ভিদের স্বাস্থ্য/সমস্যা নির্ণয়",
         "intent_general": "কৃষকের প্রশ্নের উদ্দেশ্য: সাধারণ কৃষি প্রশ্ন",
-        # Context Framing Keys - ** NEEDS BENGALI TRANSLATION **
         "context_header_weather": "--- Relevant Weather Data for {location} (Interpret for Farmer) ---",
         "context_footer_weather": "--- End Weather Data ---",
         "context_weather_unavailable": "Weather Forecast Unavailable: {error_msg}",
@@ -416,14 +362,10 @@ translations = {
         "context_header_general": "--- General Query Context ---",
         "context_data_general": "Farmer Question: '{query}'. (Provide a comprehensive agricultural answer based on profile/history/general knowledge.)",
         "context_footer_general": "--- End General Query Context ---",
-        # ... (keep existing Bengali translations, updating as needed)
-        "log_entry_display": "<small>**সময়:** {timestamp}<br>**প্রশ্ন:** {query}<br>**উত্তর ({lang}):** {response}</small>\n\n---\n", # Updated format
+        "log_entry_display": "<small>**সময়:** {timestamp}<br>**প্রশ্ন:** {query}<br>**উত্তর ({lang}):** {response}</small>\n\n---\n",
         "weather_rain_display": f" বৃষ্টি: {{value:.1f}}মিমি",
-        # ... (ensure all other needed keys are present)
     },
     "Telugu": {
-        # ... [Keep existing Telugu translations] ...
-         # NEEDS TELUGU UPDATES for context keys + spinner text
         "edit_profile_header": "{name} కోసం ప్రొఫైల్‌ని సవరించండి",
         "save_changes_button": "మార్పులను సేవ్ చేయండి",
         "profile_updated_success": "{name} కోసం ప్రొఫైల్ విజయవంతంగా నవీకరించబడింది.",
@@ -432,9 +374,9 @@ translations = {
         "map_instructions": "రిఫరెన్స్ కోఆర్డినేట్‌లను కనుగొనడానికి మ్యాప్ శోధన (ఎగువ-కుడి) ఉపయోగించండి లేదా మ్యాప్‌పై క్లిక్ చేయండి. వాటిని క్రింద మాన్యువల్‌గా నమోదు చేయండి.",
         "map_click_reference": "మ్యాప్ క్లిక్ కోఆర్డినేట్‌లు (రిఫరెన్స్):",
         "selected_coords_label": "వ్యవసాయ క్షేత్రం కోఆర్డినేట్‌లు (మాన్యువల్‌గా నమోదు చేయండి):",
-        "location_set_description": "పొలం {lat:.2f},{lon:.2f} సమీపంలో", # Updated
+        "location_set_description": "పొలం {lat:.2f},{lon:.2f} సమీపంలో",
         "location_not_set_description": "స్థానం సెట్ చేయబడలేదు",
-        "farmer_context_data": "రైతు సందర్భం: పేరు: {name}, స్థానం: {location_description}, నేల: {soil}, క్షేత్ర పరిమాణం: {size}.", # Updated
+        "farmer_context_data": "రైతు సందర్భం: పేరు: {name}, స్థానం: {location_description}, నేల: {soil}, క్షేత్ర పరిమాణం: {size}.",
         "page_caption": "AI- ఆధారిత వ్యవసాయ సలహా", "sidebar_config_header": "⚙️ కాన్ఫిగరేషన్",
         "gemini_key_label": "Google Gemini API కీ", "gemini_key_help": "AI ప్రతిస్పందనలకు అవసరం.",
         "weather_key_label": "OpenWeatherMap API కీ", "weather_key_help": "వాతావరణ సూచనలకు అవసరం.",
@@ -457,7 +399,7 @@ translations = {
         "tab_new_chat": "💬 కొత్త చాట్", "tab_past_interactions": "📜 గత సంభాషణలు", "tab_edit_profile": "✏️ ప్రొఫైల్‌ని సవరించండి",
         "main_header": "కృషి-సహాయక్ AI తో చాట్ చేయండి", "query_label": "మీ ప్రశ్నను నమోదు చేయండి:",
         "get_advice_button": "పంపండి",
-        "thinking_spinner": "🤖 విశ్లేషిస్తున్నాను & {lang} లో సలహాను ఉత్పత్తి చేస్తున్నాను...", # Updated
+        "thinking_spinner": "🤖 విశ్లేషిస్తున్నాను & {lang} లో సలహాను ఉత్పత్తి చేస్తున్నాను...",
         "advice_header": "💡 {name} కోసం సలహా ({lang} లో)",
         "profile_error": "❌ దయచేసి ముందుగా సైడ్‌బార్‌ని ఉపయోగించి రైతు ప్రొఫైల్‌ను లోడ్ చేయండి లేదా సృష్టించండి.",
         "query_warning": "⚠️ దయచేసి ఒక ప్రశ్నను నమోదు చేయండి.",
@@ -469,7 +411,6 @@ translations = {
         "intent_weather": "రైతు ప్రశ్న ఉద్దేశ్యం: వాతావరణ సూచన & ప్రభావాల అభ్యర్థన",
         "intent_health": "రైతు ప్రశ్న ఉద్దేశ్యం: మొక్క ఆరోగ్య/సమస్య నిర్ధారణ",
         "intent_general": "రైతు ప్రశ్న ఉద్దేశ్యం: సాధారణ వ్యవసాయ ప్రశ్న",
-        # Context Framing Keys - ** NEEDS TELUGU TRANSLATION **
         "context_header_weather": "--- Relevant Weather Data for {location} (Interpret for Farmer) ---",
         "context_footer_weather": "--- End Weather Data ---",
         "context_weather_unavailable": "Weather Forecast Unavailable: {error_msg}",
@@ -486,14 +427,10 @@ translations = {
         "context_header_general": "--- General Query Context ---",
         "context_data_general": "Farmer Question: '{query}'. (Provide a comprehensive agricultural answer based on profile/history/general knowledge.)",
         "context_footer_general": "--- End General Query Context ---",
-        # ... (keep existing Telugu translations, updating as needed)
-        "log_entry_display": "<small>**సమయం:** {timestamp}<br>**ప్రశ్న:** {query}<br>**సమాధానం ({lang}):** {response}</small>\n\n---\n", # Updated format
+        "log_entry_display": "<small>**సమయం:** {timestamp}<br>**ప్రశ్న:** {query}<br>**సమాధానం ({lang}):** {response}</small>\n\n---\n",
         "weather_rain_display": f" వర్షం: {{value:.1f}}మిమీ",
-         # ... (ensure all other needed keys are present)
     },
     "Marathi": {
-        # ... [Keep existing Marathi translations] ...
-         # NEEDS MARATHI UPDATES for context keys + spinner text
         "edit_profile_header": "{name} साठी प्रोफाइल संपादित करा",
         "save_changes_button": "बदल जतन करा",
         "profile_updated_success": "{name} साठी प्रोफाइल यशस्वीरित्या अद्यतनित केले.",
@@ -502,9 +439,9 @@ translations = {
         "map_instructions": "निर्देशांक संदर्भासाठी नकाशा शोध (वर-उजवीकडे) वापरा किंवा नकाशावर क्लिक करा. ते खाली मॅन्युअली प्रविष्ट करा.",
         "map_click_reference": "नकाशा क्लिक निर्देशांक (संदर्भ):",
         "selected_coords_label": "शेती निर्देशांक (मॅन्युअली प्रविष्ट करा):",
-        "location_set_description": "शेत {lat:.2f},{lon:.2f} जवळ", # Updated
+        "location_set_description": "शेत {lat:.2f},{lon:.2f} जवळ",
         "location_not_set_description": "स्थान सेट नाही",
-        "farmer_context_data": "शेतकरी संदर्भ: नाव: {name}, स्थान: {location_description}, माती: {soil}, शेतीचा आकार: {size}.", # Updated
+        "farmer_context_data": "शेतकरी संदर्भ: नाव: {name}, स्थान: {location_description}, माती: {soil}, शेतीचा आकार: {size}.",
         "page_caption": "एआय-आधारित कृषी सल्ला", "sidebar_config_header": "⚙️ संरचना",
         "gemini_key_label": "गूगल जेमिनी एपीआय की", "gemini_key_help": "एआय प्रतिसादांसाठी आवश्यक.",
         "weather_key_label": "ओपनवेदरमॅप एपीआय की", "weather_key_help": "हवामान अंदाजासाठी आवश्यक.",
@@ -527,7 +464,7 @@ translations = {
         "tab_new_chat": "💬 नवीन चॅट", "tab_past_interactions": "📜 मागील संवाद", "tab_edit_profile": "✏️ प्रोफाइल संपादित करा",
         "main_header": "कृषी-सहाय्यक एआय सह चॅट करा", "query_label": "आपला प्रश्न प्रविष्ट करा:",
         "get_advice_button": "पाठवा",
-        "thinking_spinner": "🤖 विश्लेषण करत आहे आणि {lang} मध्ये सल्ला तयार करत आहे...", # Updated
+        "thinking_spinner": "🤖 विश्लेषण करत आहे आणि {lang} मध्ये सल्ला तयार करत आहे...",
         "advice_header": "💡 {name} साठी सल्ला ({lang} मध्ये)",
         "profile_error": "❌ कृपया आधी साइडबार वापरून शेतकरी प्रोफाइल लोड करा किंवा तयार करा.",
         "query_warning": "⚠️ कृपया एक प्रश्न प्रविष्ट करा.",
@@ -539,7 +476,6 @@ translations = {
         "intent_weather": "शेतकरी क्वेरी उद्देश: हवामान अंदाज आणि परिणाम विनंती",
         "intent_health": "शेतकरी क्वेरी उद्देश: वनस्पती आरोग्य/समस्या निदान",
         "intent_general": "शेतकरी क्वेरी उद्देश: सामान्य शेती प्रश्न",
-        # Context Framing Keys - ** NEEDS MARATHI TRANSLATION **
         "context_header_weather": "--- Relevant Weather Data for {location} (Interpret for Farmer) ---",
         "context_footer_weather": "--- End Weather Data ---",
         "context_weather_unavailable": "Weather Forecast Unavailable: {error_msg}",
@@ -556,39 +492,33 @@ translations = {
         "context_header_general": "--- General Query Context ---",
         "context_data_general": "Farmer Question: '{query}'. (Provide a comprehensive agricultural answer based on profile/history/general knowledge.)",
         "context_footer_general": "--- End General Query Context ---",
-        # ... (keep existing Marathi translations, updating as needed)
-        "log_entry_display": "<small>**वेळ:** {timestamp}<br>**प्रश्न:** {query}<br>**उत्तर ({lang}):** {response}</small>\n\n---\n", # Updated format
+        "log_entry_display": "<small>**वेळ:** {timestamp}<br>**प्रश्न:** {query}<br>**उत्तर ({lang}):** {response}</small>\n\n---\n",
         "weather_rain_display": f" पाऊस: {{value:.1f}}मिमी",
-        # ... (ensure all other needed keys are present)
     },
 
 }
 
-# --- Helper Functions ---
 
 def _format_translation(template, **kwargs):
-    """Internal helper to safely format translation strings."""
     formatted_kwargs = {}
     for k, v in kwargs.items():
         if pd.isna(v):
              formatted_kwargs[k] = ui_translator("value_na", default="N/A")
         elif isinstance(v, float):
-             # Adjust formatting based on need
              if k in ['price_start', 'price_end', 'farm_size_ha']: formatted_kwargs[k] = f"{v:.2f}"
              elif k in ['latitude', 'longitude']: formatted_kwargs[k] = f"{v:.6f}"
              elif k == 'confidence': formatted_kwargs[k] = f"{v:.0%}"
-             elif k == 'value': # General float like rain
+             elif k == 'value':
                  formatted_kwargs[k] = f"{v:.1f}"
-             else: formatted_kwargs[k] = f"{v}" # Default for other floats (temp, etc.)
-        elif isinstance(v, (int, datetime.date, datetime.datetime)): # Pass through integers, dates directly
+             else: formatted_kwargs[k] = f"{v}"
+        elif isinstance(v, (int, datetime.date, datetime.datetime)):
              formatted_kwargs[k] = v
         elif v is None:
             formatted_kwargs[k] = ""
         else:
-            formatted_kwargs[k] = str(v) # Ensure everything else is a string
+            formatted_kwargs[k] = str(v)
 
     try:
-        # Ensure the template itself is a string before formatting
         str_template = str(template)
         temp_template = str_template.replace('{{', '<DOUBLE_BRACE_OPEN>').replace('}}', '<DOUBLE_BRACE_CLOSE>')
         formatted = temp_template.format(**formatted_kwargs)
@@ -596,11 +526,11 @@ def _format_translation(template, **kwargs):
         return formatted
     except KeyError as e:
         logger.warning(f"Translator: Missing format key '{e}' in template. Template: '{template}' Kwargs: {kwargs}")
-        return template # Return unformatted template if key missing
+        return template
     except ValueError as e:
         key_causing_error = None
         for key_check in formatted_kwargs:
-            if f"{{{key_check}:" in str(template): # Basic check
+            if f"{{{key_check}:" in str(template):
                 key_causing_error = key_check
                 break
         if "Unknown format code" in str(e):
@@ -614,12 +544,6 @@ def _format_translation(template, **kwargs):
         return template
 
 def ui_translator(key, default=None, **kwargs):
-    """
-    Dynamically gets the translated string for the UI based on the current session language.
-    Falls back to English if the key or language is missing.
-    Uses session state for language selection directly.
-    Accepts an optional default fallback string.
-    """
     selected_language = st.session_state.get('selected_language', "English")
 
     if selected_language not in translations:
@@ -631,7 +555,6 @@ def ui_translator(key, default=None, **kwargs):
     lang_dict = translations.get(selected_language, translations["English"])
     default_lang_dict = translations.get("English", {})
 
-    # Get template: Selected Lang -> English Lang -> Provided Default -> "[KEY NOT FOUND]"
     template = lang_dict.get(key)
     if template is None:
         template = default_lang_dict.get(key)
@@ -644,7 +567,6 @@ def ui_translator(key, default=None, **kwargs):
 
 
 def load_or_create_farmer_db():
-    # (No changes needed in this function - keep original logic)
     if os.path.exists(FARMER_CSV_PATH):
         try:
             df = pd.read_csv(FARMER_CSV_PATH, encoding='utf-8')
@@ -660,11 +582,10 @@ def load_or_create_farmer_db():
                     elif col == 'soil_type': df[col] = 'Unknown'
                     elif col == 'language': df[col] = 'English'
                     elif col == 'name': df[col] = ''
-                    else: df[col] = pd.NA # Fallback for unexpected new columns
+                    else: df[col] = pd.NA
 
-            # Validate and clean data types, handle NaN/empties
             df['name'] = df['name'].fillna('').astype(str).str.strip()
-            df = df[df['name'] != ''] # Remove rows with empty names after stripping
+            df = df[df['name'] != '']
 
             df['language'] = df['language'].fillna('English').astype(str).str.strip()
             df['language'] = df['language'].apply(lambda x: x if x in translations else 'English')
@@ -676,7 +597,7 @@ def load_or_create_farmer_db():
             df['farm_size_ha'] = pd.to_numeric(df['farm_size_ha'], errors='coerce').fillna(1.0)
             df['farm_size_ha'] = df['farm_size_ha'].apply(lambda x: x if pd.notna(x) and x > 0 else 1.0)
 
-            df = df[CSV_COLUMNS] # Ensure correct column order
+            df = df[CSV_COLUMNS]
 
             if missing_cols:
                 logger.info(f"Resaving {FARMER_CSV_PATH} after adding missing columns.")
@@ -702,7 +623,6 @@ def load_or_create_farmer_db():
 
 
 def add_or_update_farmer(df, profile_data):
-    # (No changes needed in this function - keep original logic)
     if not isinstance(df, pd.DataFrame):
         logger.error("add_or_update_farmer received non-DataFrame.")
         return pd.DataFrame(columns=CSV_COLUMNS)
@@ -739,7 +659,7 @@ def add_or_update_farmer(df, profile_data):
             default_val = 1.0
             num_val = pd.to_numeric(value, errors='coerce')
             value_float = default_val if pd.isna(num_val) else float(num_val)
-            final_val = value_float if value_float > 0 else default_val # Ensure positive size
+            final_val = value_float if value_float > 0 else default_val
             new_data[col] = final_val
             if pd.isna(num_val) and value is not None and str(value).strip() != "":
                  logger.warning(f"Invalid value '{value}' provided for {col} for farmer '{profile_name_clean}'. Using default {default_val}.")
@@ -788,7 +708,6 @@ def add_or_update_farmer(df, profile_data):
 
 
 def save_farmer_db(df):
-    # (No changes needed in this function - keep original logic)
     if not isinstance(df, pd.DataFrame):
         logger.error("Attempted to save a non-DataFrame object as farmer DB.")
         st.error("Internal error: Cannot save profile database.")
@@ -831,7 +750,6 @@ def save_farmer_db(df):
 
 
 def find_farmer(df, name):
-    # (No changes needed in this function - keep original logic)
     if df is None or df.empty or not isinstance(name, str):
         return None
     name_clean = name.strip()
@@ -876,7 +794,6 @@ def find_farmer(df, name):
 
 
 def log_qa(timestamp, farmer_name, language, query, response, internal_prompt):
-    # (No changes needed in this function - keep original logic)
     try:
         log_entry = {
             'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
@@ -884,7 +801,7 @@ def log_qa(timestamp, farmer_name, language, query, response, internal_prompt):
             'language': str(language),
             'query': str(query),
             'response': str(response),
-            'internal_prompt': str(internal_prompt) # Ensure it's a string
+            'internal_prompt': str(internal_prompt)
         }
         log_df_entry = pd.DataFrame([log_entry], columns=QA_LOG_COLUMNS)
         file_exists = os.path.exists(QA_LOG_PATH)
@@ -903,7 +820,6 @@ def log_qa(timestamp, farmer_name, language, query, response, internal_prompt):
 
 
 def initialize_llm(api_key):
-    # (No changes needed in this function - keep original logic)
     if not LANGCHAIN_AVAILABLE:
         st.error("Langchain Google GenAI library not available. Cannot initialize LLM.")
         return None
@@ -914,7 +830,7 @@ def initialize_llm(api_key):
     try:
         llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
-            temperature=0.3, # Keep temp reasonable for advisory role
+            temperature=0.3,
             google_api_key=api_key
         )
         logger.info("Google Gemini LLM object initialized successfully.")
@@ -933,12 +849,10 @@ def initialize_llm(api_key):
         st.error(error_message)
         return None
 
-# --- Placeholder/Example Functions ---
-# (These remain unchanged - the AI prompt enhancement doesn't alter their function)
+
 def predict_suitable_crops(soil_type, region, avg_temp, avg_rainfall, season):
     logger.debug(f"Predicting crops: Soil={soil_type}, Region={region}, Temp={avg_temp}, Rain={avg_rainfall}, Season={season}")
     recommendations = []; soil_lower = soil_type.lower() if isinstance(soil_type, str) else ""
-    # (Keep existing simplified logic)
     if "loamy" in soil_lower or "alluvial" in soil_lower:
         if avg_rainfall > 600 and season == "Kharif": recommendations.extend(["Rice", "Cotton", "Sugarcane", "Maize"])
         elif season == "Rabi": recommendations.extend(["Wheat", "Mustard", "Barley", "Gram"])
@@ -952,7 +866,7 @@ def predict_suitable_crops(soil_type, region, avg_temp, avg_rainfall, season):
         else: recommendations.extend(["Mustard", "Barley", "Chickpea"])
     elif "red" in soil_lower or "laterite" in soil_lower:
          recommendations.extend(["Groundnut", "Pulses", "Potato", "Ragi", "Millets"])
-    else: # Default/Unknown
+    else:
         recommendations.extend(["Sorghum", "Local Pulses", "Regional Vegetables", "Fodder Crops"])
     random.shuffle(recommendations); return list(set(recommendations[:3]))
 
@@ -972,15 +886,14 @@ def forecast_market_price(crop, market_name):
     base_price = base_prices.get(crop, base_prices["Default"])
     current_price = random.uniform(base_price * 0.9, base_price * 1.1)
     forecast_prices = []
-    trend_factor = random.uniform(-0.03, 0.03) # Overall weekly trend
-    daily_volatility = random.uniform(0.01, 0.06) # Daily random fluctuation
+    trend_factor = random.uniform(-0.03, 0.03)
+    daily_volatility = random.uniform(0.01, 0.06)
 
     last_price = current_price
-    for i in range(7): # Forecast for next 7 days
-        # Apply trend progressively + daily noise
+    for i in range(7):
         price_change = 1 + (trend_factor * (i+1)/7) + random.uniform(-daily_volatility, daily_volatility)
         next_price = last_price * price_change
-        next_price = max(base_price * 0.6, next_price) # Prevent extreme drops
+        next_price = max(base_price * 0.6, next_price)
         forecast_prices.append(round(next_price, 2))
         last_price = next_price
 
@@ -988,13 +901,12 @@ def forecast_market_price(crop, market_name):
     if forecast_prices:
         start_price = forecast_prices[0]
         end_price = forecast_prices[-1]
-        if end_price > start_price * 1.04: # >4% increase
+        if end_price > start_price * 1.04:
             trend_suggestion = "Suggests a potential upward trend in the near term."
-        elif end_price < start_price * 0.96: # >4% decrease
+        elif end_price < start_price * 0.96:
             trend_suggestion = "Indicates a potential downward trend in the near term."
-        elif abs(end_price - start_price) / start_price < 0.015: # <1.5% change
+        elif abs(end_price - start_price) / start_price < 0.015:
             trend_suggestion = "Prices look relatively stable for the next week."
-        # Default remains 'volatile...' for moderate changes
 
     return {
         "crop": crop,
@@ -1006,7 +918,6 @@ def forecast_market_price(crop, market_name):
 
 
 def get_weather_forecast(latitude, longitude, api_key):
-    # (No changes needed in this core function, just ensure output format is consistent)
     try:
         lat_f = float(latitude)
         lon_f = float(longitude)
@@ -1036,7 +947,6 @@ def get_weather_forecast(latitude, longitude, api_key):
         data = response.json()
         logger.info(f"Weather data fetched successfully for {lat_f:.2f},{lon_f:.2f}.")
 
-        # --- Process data into daily summaries ---
         daily_forecasts = defaultdict(lambda: {
             'min_temp': float('inf'),
             'max_temp': float('-inf'),
@@ -1071,7 +981,7 @@ def get_weather_forecast(latitude, longitude, api_key):
                  humidity = float(main_data.get('humidity', pd.NA))
                  description_formatted = weather_data['description'].capitalize()
                  rain_3h = float(forecast_item.get('rain', {}).get('3h', 0.0))
-                 wind_speed = float(forecast_item.get('wind', {}).get('speed', 0.0)) # m/s
+                 wind_speed = float(forecast_item.get('wind', {}).get('speed', 0.0))
 
              except (KeyError, ValueError, TypeError) as e:
                  logger.warning(f"Skipping forecast item due to data parsing error ({e}): {forecast_item}")
@@ -1087,15 +997,14 @@ def get_weather_forecast(latitude, longitude, api_key):
              if pd.notna(humidity): day_data['raw_humidities'].append(humidity)
              if pd.notna(wind_speed): day_data['raw_windspeeds'].append(wind_speed)
 
-             # Slightly more nuanced alerts
              if rain_3h > 7: day_data['alerts'].add(f"Heavy rain ({rain_3h:.1f}mm/3hr)")
              elif rain_3h > 2: day_data['alerts'].add(f"Moderate rain ({rain_3h:.1f}mm/3hr)")
              if pd.notna(temp) and temp > 40: day_data['alerts'].add(f"Very High Temp ({temp:.0f}°C)")
              elif pd.notna(temp) and temp > 37: day_data['alerts'].add(f"High Temp ({temp:.0f}°C)")
              elif pd.notna(temp) and temp < 8: day_data['alerts'].add(f"Low Temp ({temp:.0f}°C)")
-             if pd.notna(wind_speed) and wind_speed > 17: # > 61 km/h (Strong Gale)
+             if pd.notna(wind_speed) and wind_speed > 17:
                  day_data['alerts'].add(f"Very Strong Wind ({wind_speed * 3.6:.0f} km/h)")
-             elif pd.notna(wind_speed) and wind_speed > 12: # > 43 km/h (Near Gale)
+             elif pd.notna(wind_speed) and wind_speed > 12:
                  day_data['alerts'].add(f"Strong Wind ({wind_speed * 3.6:.0f} km/h)")
 
         processed_summary = []
@@ -1121,7 +1030,6 @@ def get_weather_forecast(latitude, longitude, api_key):
             else: day_label = day_label_translation
 
             conditions_list = sorted(list(day_data['conditions']))
-            # Simple condition consolidation (optional)
             if 'Light rain' in conditions_list and 'Rain' in conditions_list: conditions_list.remove('Light rain')
             if 'Few clouds' in conditions_list and ('Scattered clouds' in conditions_list or 'Broken clouds' in conditions_list or 'Overcast clouds' in conditions_list): conditions_list.remove('Few clouds')
             conditions_str = ", ".join(conditions_list) if conditions_list else ui_translator("conditions_unclear")
@@ -1141,8 +1049,8 @@ def get_weather_forecast(latitude, longitude, api_key):
                 f"{day_label} ({date_obj.strftime('%d %b')}): "
                 f"Temp {min_t_str}°C / {max_t_str}°C, "
                 f"{conditions_str}"
-                f"{rain_str}" # Included via ui_translator now
-                f"{alerts_str}" # Included via ui_translator now
+                f"{rain_str}"
+                f"{alerts_str}"
             ).strip().replace("  ", " ")
             processed_summary.append(summary_line)
             days_added += 1
@@ -1177,14 +1085,12 @@ def get_weather_forecast(latitude, longitude, api_key):
         message = ui_translator("weather_error_unexpected", error=str(e))
         return {"status": "error", "message": ui_translator("weather_data_error", message=message)}
 
-# --- *** Enhanced LLM Interaction Function *** ---
+
 def generate_final_response_with_history(llm, base_prompt_lines, chat_history_messages, output_language):
-    """Calls the LLM, including chat history and prepending enhanced static context."""
     if not llm:
         logger.error("generate_final_response_with_history called without initialized LLM.")
         return ui_translator("llm_init_error")
 
-    # --- Enhanced System Prompt ---
     system_prompt_content = f"""You are Krishi-Sahayak AI, an expert agricultural advisor specifically for farmers in India. Your goal is to provide insightful, practical, and detailed advice.
 Respond ONLY in {output_language}. Do not use any other language.
 
@@ -1203,24 +1109,15 @@ Synthesize all this information to answer the farmer's MOST RECENT query.
 ## Farmer Profile & Context for Current Turn:
 ---
 """ + "\n".join(base_prompt_lines) + "\n---\n"
-    # --- End Enhanced System Prompt ---
 
-
-    # Combine system prompt and chat history into a list of messages
     messages_for_llm = [
         SystemMessage(content=system_prompt_content)
     ]
-    # Append existing history (which includes the latest user query already)
     messages_for_llm.extend(chat_history_messages)
 
     logger.debug(f"Generating response using {len(chat_history_messages)} history messages. Output lang: {output_language}")
-    # Limit log length for system prompt if needed
-    # logger.debug(f"System Prompt (first 500 chars):\n---\n{system_prompt_content[:500]}\n---")
-    # if chat_history_messages and isinstance(chat_history_messages[-1], HumanMessage):
-    #      logger.debug(f"Latest User Message: {chat_history_messages[-1].content[:100]}...")
 
     try:
-        # Use invoke with the list of message objects
         ai_response = llm.invoke(messages_for_llm)
 
         response_content = ai_response.content if hasattr(ai_response, 'content') else str(ai_response)
@@ -1229,7 +1126,6 @@ Synthesize all this information to answer the farmer's MOST RECENT query.
 
     except Exception as e:
         logger.error(f"Exception calling LLM invoke with history: {e}", exc_info=True)
-        # Detailed error handling from previous version
         err_msg = ui_translator("processing_error", e=f"AI communication failure ({type(e).__name__})")
         err_str = str(e).lower()
         if "api key" in err_str or "permission" in err_str or "denied" in err_str or "authenticate" in err_str:
@@ -1251,18 +1147,9 @@ Synthesize all this information to answer the farmer's MOST RECENT query.
 
         return err_msg
 
-# --- *** Request Processing Function (Updated with context framing) *** ---
+
 def process_farmer_request(farmer_profile, current_query, chat_history, llm, weather_api_key, output_language):
-    """
-    Processes the farmer's request by:
-    1. Gathering context (profile, location).
-    2. Detecting intent (keywords).
-    3. Fetching relevant data (weather, placeholders for crops/market/health) and framing it for the LLM.
-    4. Calling the LLM via generate_final_response_with_history.
-    5. Logging the Q&A.
-    Returns a dictionary with status, farmer_name, response_text, debug_internal_prompt.
-    """
-    static_context_lines = [] # Lines for the 'static' context part of the prompt
+    static_context_lines = []
 
     if not farmer_profile or not isinstance(farmer_profile, dict) or not str(farmer_profile.get('name','')).strip():
         logger.error("process_farmer_request called with invalid farmer_profile.")
@@ -1273,7 +1160,6 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
     query_lower = query_clean.lower()
     logger.info(f"Processing query for farmer '{farmer_name}': '{query_clean}' | Output Lang: {output_language}")
 
-    # --- 1. Gather Farmer Context ---
     lat = farmer_profile.get('latitude', PROFILE_DEFAULT_LAT)
     lon = farmer_profile.get('longitude', PROFILE_DEFAULT_LON)
     soil = farmer_profile.get('soil_type', 'Unknown')
@@ -1292,16 +1178,14 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
         size_str = f"{farm_size:.2f} Ha"
 
     static_context_lines.append(ui_translator('farmer_context_data', name=farmer_name, location_description=location_desc, soil=soil, size=size_str))
-    static_context_lines.append("") # Add a blank line for separation
+    static_context_lines.append("")
 
-    # --- 2. Intent Detection & Data Framing ---
     intent_identified = False
     crop_keywords = ["crop recommend", "suggest crop", "kya ugana", "फसल सुझा", "பயிர்களைப் பரிந்துரை", "ফসল সুপারিশ", "పంటలను సూచిం", "पिके सुचवा", "grow next", "suitable crop", "कौन सी फसल", "எந்தப் பயிர்", "plant next"]
     market_keywords = ["market price", "mandi rate", "bazaar price", "बाजार भाव", "சந்தை விலை", "বাজার দর", "మార్కెట్ ధర", "बाजार भाव", "what price", "selling price", "bhav", "kimat"]
     weather_keywords = ["weather", "forecast", "mausam", "मौसम", "வானிலை", "আবহাওয়া", "వాతావరణం", "हवामान", "rain", "temperature", "barish", "tapman", "humidity", "wind"]
     health_keywords = ["disease", "pest", "infection", "sick plant", "plant health", "रोग", "कीट", "நோய்", "রোগ", "తెగులు", "कीड", "problem with plant", "issue with crop"]
 
-    # --- Intent: Weather ---
     if any(keyword in query_lower for keyword in weather_keywords):
         intent_identified = True
         logger.info("Intent Detected: Weather Forecast & Implications")
@@ -1310,27 +1194,25 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
         loc_name_weather = location_desc if weather_info.get('location', None) is None else weather_info.get('location', location_desc)
         static_context_lines.append(ui_translator('context_header_weather', location=loc_name_weather))
         if weather_info.get('status') == 'success':
-            # static_context_lines.append(ui_translator('weather_data_header', location=loc_name_weather)) # Maybe redundant with header
             summary_list = weather_info.get('daily_summary', [])
             if summary_list:
-                static_context_lines.extend([f"- {s}" for s in summary_list]) # Add bullet points
+                static_context_lines.extend([f"- {s}" for s in summary_list])
             else:
                 static_context_lines.append(f"- {ui_translator('weather_error_summary_generation')}")
         else:
             error_msg_weather = weather_info.get('message', ui_translator('weather_error_unknown'))
             static_context_lines.append(ui_translator('context_weather_unavailable', error_msg=error_msg_weather))
         static_context_lines.append(ui_translator('context_footer_weather'))
-        static_context_lines.append("") # Blank line
+        static_context_lines.append("")
 
-    # --- Intent: Crop Recommendation ---
     elif any(keyword in query_lower for keyword in crop_keywords):
         intent_identified = True
         logger.info("Intent Detected: Crop Recommendation")
         static_context_lines.append(ui_translator('intent_crop'))
-        region = location_desc # Use location description as region proxy
-        avg_temp = random.uniform(20, 35) # Placeholder
-        avg_rainfall = random.uniform(400, 800) # Placeholder
-        season = "Kharif" if 6 <= datetime.datetime.now().month <= 10 else "Rabi" # Simple season logic
+        region = location_desc
+        avg_temp = random.uniform(20, 35)
+        avg_rainfall = random.uniform(400, 800)
+        season = "Kharif" if 6 <= datetime.datetime.now().month <= 10 else "Rabi"
         suggested_crops = predict_suitable_crops(soil, region, avg_temp, avg_rainfall, season)
 
         static_context_lines.append(ui_translator('context_header_crop'))
@@ -1338,22 +1220,19 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
         crops_str = ', '.join(suggested_crops) if suggested_crops else ui_translator("no_crops_recommendation")
         static_context_lines.append(ui_translator('context_crop_ideas', crops=crops_str))
         static_context_lines.append(ui_translator('context_footer_crop'))
-        static_context_lines.append("") # Blank line
+        static_context_lines.append("")
 
-    # --- Intent: Market Price ---
     elif any(keyword in query_lower for keyword in market_keywords):
         intent_identified = True
         logger.info("Intent Detected: Market Price")
         static_context_lines.append(ui_translator('intent_market'))
-        # Simple crop detection (needs improvement for real use)
-        crop = "Wheat" # Default
+        crop = "Wheat"
         if any(c in query_lower for c in ["rice", "chawal", "धान", "चावल", "அரிசி", "চাল", "బియ్యం", "तांदूळ"]): crop = "Rice"
         elif any(c in query_lower for c in ["maize", "makka", "मक्का", "சோளம்", "ভুট্টা", "మొక్కజొన్న", "मका"]): crop = "Maize"
         elif any(c in query_lower for c in ["cotton", "kapas", "कपास", "பருத்தி", "তুলা", "పత్తి", "कापूस"]): crop = "Cotton"
         elif any(c in query_lower for c in ["tomato", "tamatar", "टमाटर", "தக்காளி", "টমেটো", "టమోటా", "टोमॅटो"]): crop = "Tomato"
-        # Keep Wheat as default otherwise
 
-        market = "Nearby Mandi" # Placeholder market
+        market = "Nearby Mandi"
         forecast = forecast_market_price(crop, market)
         prices = forecast.get('predicted_prices_per_quintal', [])
         price_start = float(prices[0]) if prices else 0.0
@@ -1370,14 +1249,13 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
             )
         )
         static_context_lines.append(ui_translator('context_footer_market'))
-        static_context_lines.append("") # Blank line
+        static_context_lines.append("")
 
-    # --- Intent: Plant Health ---
     elif any(keyword in query_lower for keyword in health_keywords):
          intent_identified = True
          logger.info("Intent Detected: Plant Health (Placeholder)")
          static_context_lines.append(ui_translator('intent_health'))
-         detection = predict_disease_from_image_placeholder() # Uses placeholder
+         detection = predict_disease_from_image_placeholder()
          conf_f = float(detection.get('confidence', 0.0))
 
          static_context_lines.append(ui_translator('context_header_health'))
@@ -1390,34 +1268,30 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
              )
          )
          static_context_lines.append(ui_translator('context_footer_health'))
-         static_context_lines.append("") # Blank line
+         static_context_lines.append("")
 
-    # --- Intent: General ---
     if not intent_identified:
         logger.info("Intent Detected: General Question")
         static_context_lines.append(ui_translator('intent_general'))
         static_context_lines.append(ui_translator('context_header_general'))
         static_context_lines.append(ui_translator('context_data_general', query=query_clean))
         static_context_lines.append(ui_translator('context_footer_general'))
-        static_context_lines.append("") # Blank line
+        static_context_lines.append("")
 
-    # --- 3. Construct Final Prompt & Call LLM ---
-    debug_internal_prompt_for_log = "\n".join(static_context_lines) # Log only the static part
+    debug_internal_prompt_for_log = "\n".join(static_context_lines)
 
     if not llm:
         llm_init_err_msg = ui_translator("llm_init_error")
         logger.error(llm_init_err_msg)
         return { "status": "error", "farmer_name": farmer_name, "response_text": llm_init_err_msg, "debug_internal_prompt": debug_internal_prompt_for_log }
 
-    # *** Use generate_final_response_with_history (with enhanced system prompt) ***
     final_response = generate_final_response_with_history(
         llm=llm,
-        base_prompt_lines=static_context_lines, # The framed context gathered *for this turn*
-        chat_history_messages=chat_history,     # Full history including current user query
+        base_prompt_lines=static_context_lines,
+        chat_history_messages=chat_history,
         output_language=output_language
     )
 
-    # --- 4. Process Response & Log ---
     is_error_response = False
     if final_response is None:
         is_error_response = True
@@ -1447,12 +1321,11 @@ def process_farmer_request(farmer_profile, current_query, chat_history, llm, wea
         "status": status,
         "farmer_name": farmer_name,
         "response_text": final_response,
-        "debug_internal_prompt": debug_internal_prompt_for_log # Kept for potential future debug view
+        "debug_internal_prompt": debug_internal_prompt_for_log
     }
 
-# --- Map Interaction Helper ---
+
 def handle_map_interaction_reference(map_key="folium_map_reference", center=None, zoom=None, allow_click_updates=True):
-    # (No changes needed in this function - keep original logic)
     st.info(ui_translator("map_instructions"))
 
     map_center_to_use = center if center else st.session_state.get('map_center', [MAP_DEFAULT_LAT, MAP_DEFAULT_LON])
@@ -1468,7 +1341,6 @@ def handle_map_interaction_reference(map_key="folium_map_reference", center=None
     Geocoder(collapsed=False, position='topright', add_marker=False).add_to(m)
     m.add_child(folium.LatLngPopup())
 
-    # Marker for reference click (relevant for New Profile)
     if allow_click_updates:
         ref_coords = st.session_state.get('map_clicked_ref_coords')
         if ref_coords and ref_coords.get('lat') is not None and ref_coords.get('lon') is not None:
@@ -1481,7 +1353,6 @@ def handle_map_interaction_reference(map_key="folium_map_reference", center=None
                 ).add_to(m)
             except (ValueError, TypeError): logger.warning(f"Invalid reference coords in session: {ref_coords}")
 
-    # Marker for current profile's location (relevant for Edit Profile map)
     current_profile = st.session_state.get('current_farmer_profile')
     if current_profile:
         prof_lat = current_profile.get('latitude', PROFILE_DEFAULT_LAT)
@@ -1504,7 +1375,6 @@ def handle_map_interaction_reference(map_key="folium_map_reference", center=None
         new_center_data = map_data.get("center")
         new_zoom = map_data.get("zoom")
 
-        # Update global map state
         if new_center_data:
             center_coords = None
             if isinstance(new_center_data, dict) and 'lat' in new_center_data and ('lng' in new_center_data or 'lon' in new_center_data):
@@ -1515,13 +1385,10 @@ def handle_map_interaction_reference(map_key="folium_map_reference", center=None
             current_map_center = st.session_state.get('map_center', [0.0, 0.0])
             if center_coords and (abs(center_coords[0] - current_map_center[0]) > 1e-7 or abs(center_coords[1] - current_map_center[1]) > 1e-7):
                   st.session_state.map_center = center_coords
-                  # logger.debug(f"Map center updated via map '{map_key}': {st.session_state.map_center}")
 
         if new_zoom and new_zoom != st.session_state.get('map_zoom'):
             st.session_state.map_zoom = new_zoom
-            # logger.debug(f"Map zoom updated via map '{map_key}': {st.session_state.map_zoom}")
 
-        # Handle reference click update IF allowed
         last_clicked = map_data.get("last_clicked")
         if allow_click_updates and last_clicked and 'lat' in last_clicked and ('lng' in last_clicked or 'lon' in last_clicked):
             clicked_lat = last_clicked["lat"]
@@ -1533,7 +1400,6 @@ def handle_map_interaction_reference(map_key="folium_map_reference", center=None
                 st.session_state.map_clicked_ref_coords = {'lat': clicked_lat, 'lon': clicked_lon}
                 st.rerun()
 
-    # Display reference coords below map IF allowed
     if allow_click_updates:
         ref_coords_display = st.session_state.get('map_clicked_ref_coords')
         if ref_coords_display and ref_coords_display.get('lat') is not None and ref_coords_display.get('lon') is not None:
@@ -1546,9 +1412,8 @@ def handle_map_interaction_reference(map_key="folium_map_reference", center=None
         else:
             st.caption(ui_translator("map_click_prompt_message"))
 
-# --- Display Past Interactions ---
+
 def display_past_interactions(farmer_name):
-    # (No changes needed in this function - keep original logic)
     st.header(ui_translator("past_interactions_header", name=farmer_name))
     qa_log_file = QA_LOG_PATH
     if not os.path.exists(qa_log_file):
@@ -1602,7 +1467,6 @@ def display_past_interactions(farmer_name):
             a = str(row.get('response', ''))
             l = str(row.get('language', ui_translator('value_na')))
 
-            # Display using markdown with <small> tag
             st.markdown(
                 ui_translator("log_entry_display", timestamp=ts, query=q, lang=l, response=a),
                 unsafe_allow_html=True
@@ -1619,13 +1483,10 @@ def display_past_interactions(farmer_name):
         st.error(ui_translator("error_displaying_logs", error=str(e)))
 
 
-# --- Text-to-Speech Helper Functions ---
 def get_tts_lang_code(ui_language_name):
-    # (No changes needed in this function - keep original logic)
     return TTS_LANG_MAP.get(ui_language_name)
 
 def generate_audio_bytes(text_to_speak, lang_code):
-    # (No changes needed in this function - keep original logic)
     if not GTTS_AVAILABLE:
         logger.error("gTTS library not available, cannot generate audio.")
         return None
@@ -1644,9 +1505,8 @@ def generate_audio_bytes(text_to_speak, lang_code):
         logger.error(f"Error generating TTS audio ({lang_code}): {e}", exc_info=True)
         return None
 
-# --- Streamlit UI ---
+
 def main():
-    # --- Initialize Session State ---
     if 'selected_language' not in st.session_state: st.session_state.selected_language = "English"
     if 'current_farmer_profile' not in st.session_state: st.session_state.current_farmer_profile = None
     if 'show_new_profile_form' not in st.session_state: st.session_state.show_new_profile_form = False
@@ -1656,26 +1516,22 @@ def main():
     if 'chat_history' not in st.session_state: st.session_state.chat_history = []
     if 'form_trigger_name' not in st.session_state: st.session_state.form_trigger_name = None
 
-    # Ensure map_center is always a list
     if isinstance(st.session_state.map_center, tuple):
         st.session_state.map_center = list(st.session_state.map_center)
 
-    # --- Page Config ---
     st.set_page_config(
         page_title=ui_translator("page_title"),
         layout="wide",
         initial_sidebar_state="expanded"
     )
 
-    # --- Language Options & Callback ---
     language_options = list(translations.keys())
 
     def language_change_callback():
-        new_lang = st.session_state.widget_lang_select_key # Get value from the selectbox widget
+        new_lang = st.session_state.widget_lang_select_key
         if st.session_state.selected_language != new_lang:
              st.session_state.selected_language = new_lang
              logger.info(f"Site language MANUALLY changed to {st.session_state.selected_language} via dropdown.")
-             # No explicit rerun needed, widget change triggers it
         else:
             logger.debug("Language change callback triggered, but language is already set.")
 
@@ -1683,7 +1539,6 @@ def main():
         st.session_state.chat_history = []
         logger.info("Chat history cleared.")
 
-    # ================== SIDEBAR ==================
     with st.sidebar:
         st.header(ui_translator("sidebar_output_header"))
         try:
@@ -1691,7 +1546,7 @@ def main():
         except ValueError:
              logger.warning(f"Session lang '{st.session_state.selected_language}' not in options, defaulting UI to English.")
              current_lang_index = 0
-             if st.session_state.selected_language != "English": st.session_state.selected_language = "English" # Correct state
+             if st.session_state.selected_language != "English": st.session_state.selected_language = "English"
 
         st.selectbox(
             label=ui_translator("select_language_label"), options=language_options,
@@ -1700,7 +1555,6 @@ def main():
         )
         st.divider()
 
-        # --- API Keys ---
         st.header(ui_translator("sidebar_config_header"))
         st.text_input(
             ui_translator("gemini_key_label"), type="password",
@@ -1714,7 +1568,6 @@ def main():
         )
         st.divider()
 
-        # --- Farmer Profile ---
         st.header(ui_translator("sidebar_profile_header"))
         default_name_val = ""
         if st.session_state.current_farmer_profile and not st.session_state.show_new_profile_form:
@@ -1732,7 +1585,6 @@ def main():
 
         current_entered_name = st.session_state.get("widget_farmer_name_input", "").strip()
 
-        # --- Profile Button Logic (Load/New) ---
         if load_button_clicked or new_button_clicked:
              farmer_db = load_or_create_farmer_db()
              if not current_entered_name:
@@ -1740,7 +1592,6 @@ def main():
              else:
                  profile = find_farmer(farmer_db, current_entered_name)
 
-                 # --- Load Button Action ---
                  if load_button_clicked:
                      if profile:
                          st.session_state.current_farmer_profile = profile
@@ -1751,7 +1602,7 @@ def main():
                          loaded_language = profile.get('language', 'English')
                          language_changed = False
                          if loaded_language in translations and st.session_state.selected_language != loaded_language:
-                             st.session_state.selected_language = loaded_language # Update application state
+                             st.session_state.selected_language = loaded_language
                              language_changed = True
                              logger.info(f"App language sync to '{loaded_language}' from loaded profile: {profile['name']}.")
                          elif loaded_language not in translations:
@@ -1763,10 +1614,9 @@ def main():
                              st.session_state.map_center = [loaded_lat, loaded_lon]; st.session_state.map_zoom = MAP_CLICK_ZOOM
                          else:
                              st.session_state.map_center = [MAP_DEFAULT_LAT, MAP_DEFAULT_LON]; st.session_state.map_zoom = 5
-                         st.session_state.map_clicked_ref_coords = {'lat': None, 'lon': None} # Clear ref
+                         st.session_state.map_clicked_ref_coords = {'lat': None, 'lon': None}
 
                          st.success(ui_translator("profile_loaded_success", name=profile['name']))
-                         # Clear leftover form defaults
                          for key in ['_form_lat_default','_form_lon_default','_form_soil_default','_form_size_default','_form_lang_default']:
                               if key in st.session_state: del st.session_state[key]
 
@@ -1776,9 +1626,8 @@ def main():
                          st.warning(ui_translator("profile_not_found_warning", name=current_entered_name))
                          st.session_state.show_new_profile_form = False
 
-                 # --- New Button Action ---
                  elif new_button_clicked:
-                     if profile: # Profile Exists - Load instead
+                     if profile:
                          st.toast(ui_translator("profile_exists_warning", name=current_entered_name), icon="⚠️")
                          st.session_state.current_farmer_profile = profile
                          st.session_state.show_new_profile_form = False
@@ -1788,7 +1637,7 @@ def main():
                          existing_language = profile.get('language', 'English')
                          language_changed = False
                          if existing_language in translations and st.session_state.selected_language != existing_language:
-                             st.session_state.selected_language = existing_language # Update application state
+                             st.session_state.selected_language = existing_language
                              language_changed = True
                              logger.info(f"App language sync to '{existing_language}' from existing profile '{profile['name']}' (via New button).")
                          elif existing_language not in translations:
@@ -1797,30 +1646,28 @@ def main():
                          loaded_lat = profile.get('latitude', PROFILE_DEFAULT_LAT); loaded_lon = profile.get('longitude', PROFILE_DEFAULT_LON)
                          if loaded_lat != 0.0 or loaded_lon != 0.0: st.session_state.map_center = [loaded_lat, loaded_lon]; st.session_state.map_zoom = MAP_CLICK_ZOOM
                          else: st.session_state.map_center = [MAP_DEFAULT_LAT, MAP_DEFAULT_LON]; st.session_state.map_zoom = 5
-                         st.session_state.map_clicked_ref_coords = {'lat': None, 'lon': None} # Clear ref
+                         st.session_state.map_clicked_ref_coords = {'lat': None, 'lon': None}
 
                          for key in ['_form_lat_default','_form_lon_default','_form_soil_default','_form_size_default','_form_lang_default']:
                              if key in st.session_state: del st.session_state[key]
 
                          logger.info(f"Existing profile '{profile['name']}' loaded instead of creating new. Rerun (Lang changed: {language_changed}).")
                          st.rerun()
-                     else: # Profile does not exist - Show new form
+                     else:
                          st.info(ui_translator("creating_profile_info", name=current_entered_name))
                          st.session_state.show_new_profile_form = True
-                         st.session_state.current_farmer_profile = None # Clear old profile
+                         st.session_state.current_farmer_profile = None
                          st.session_state.form_trigger_name = current_entered_name
                          clear_chat_history()
 
-                         # Set form defaults from map click (if any) or general defaults
                          ref_coords = st.session_state.get('map_clicked_ref_coords', {})
                          lat_ref = ref_coords.get('lat'); lon_ref = ref_coords.get('lon')
                          st.session_state['_form_lat_default'] = lat_ref if lat_ref is not None else PROFILE_DEFAULT_LAT
                          st.session_state['_form_lon_default'] = lon_ref if lon_ref is not None else PROFILE_DEFAULT_LON
                          st.session_state['_form_soil_default'] = 'Unknown'
                          st.session_state['_form_size_default'] = 1.0
-                         st.session_state['_form_lang_default'] = st.session_state.selected_language # Default to site lang
+                         st.session_state['_form_lang_default'] = st.session_state.selected_language
 
-                         # Center map on ref click or default
                          if lat_ref is not None and lon_ref is not None:
                              st.session_state.map_center = [lat_ref, lon_ref]; st.session_state.map_zoom = MAP_CLICK_ZOOM
                          else:
@@ -1830,7 +1677,6 @@ def main():
                          st.rerun()
         st.divider()
 
-        # --- New Profile Form (in Sidebar) ---
         form_header_name = st.session_state.get("form_trigger_name")
         if st.session_state.show_new_profile_form and form_header_name:
              st.subheader(ui_translator("new_profile_form_header", name=form_header_name))
@@ -1838,8 +1684,8 @@ def main():
              handle_map_interaction_reference(
                  map_key="new_profile_map",
                  center=[st.session_state.get('_form_lat_default', MAP_DEFAULT_LAT), st.session_state.get('_form_lon_default', MAP_DEFAULT_LON)],
-                 zoom=st.session_state.map_zoom, # Use current zoom
-                 allow_click_updates=True # Allow this map to update ref coords
+                 zoom=st.session_state.map_zoom,
+                 allow_click_updates=True
              )
 
              with st.form("new_profile_details_form", clear_on_submit=False):
@@ -1881,18 +1727,17 @@ def main():
 
                         if isinstance(updated_db, pd.DataFrame):
                             save_farmer_db(updated_db)
-                            saved_profile = find_farmer(updated_db, profile_name_to_save) # Reload to confirm and get validated data
+                            saved_profile = find_farmer(updated_db, profile_name_to_save)
                             if saved_profile:
                                 st.session_state.current_farmer_profile = saved_profile
                                 st.session_state.show_new_profile_form = False
                                 st.session_state.form_trigger_name = None
                                 clear_chat_history()
 
-                                # Sync UI language to saved profile pref
                                 saved_language = saved_profile.get('language', 'English')
                                 lang_changed_on_save = False
                                 if saved_language in translations and st.session_state.selected_language != saved_language:
-                                     st.session_state.selected_language = saved_language # Update app state
+                                     st.session_state.selected_language = saved_language
                                      lang_changed_on_save = True
                                      logger.info(f"App language sync to '{saved_language}' from saved profile: {profile_name_to_save}.")
                                 elif saved_language not in translations:
@@ -1901,9 +1746,8 @@ def main():
                                 saved_lat = saved_profile.get('latitude', PROFILE_DEFAULT_LAT); saved_lon = saved_profile.get('longitude', PROFILE_DEFAULT_LON)
                                 if saved_lat != 0.0 or saved_lon != 0.0: st.session_state.map_center = [saved_lat, saved_lon]; st.session_state.map_zoom = MAP_CLICK_ZOOM
                                 else: st.session_state.map_center = [MAP_DEFAULT_LAT, MAP_DEFAULT_LON]; st.session_state.map_zoom = 5
-                                st.session_state.map_clicked_ref_coords = {'lat': None, 'lon': None} # Clear ref
+                                st.session_state.map_clicked_ref_coords = {'lat': None, 'lon': None}
 
-                                # Cleanup form defaults
                                 for key in ['_form_lat_default','_form_lon_default','_form_soil_default','_form_size_default','_form_lang_default']:
                                      if key in st.session_state: del st.session_state[key]
 
@@ -1920,9 +1764,8 @@ def main():
                             logger.error(f"Failed to get updated DataFrame saving profile '{profile_name_to_save}'.")
                             st.error(ui_translator("db_update_error_on_save"))
 
-        # --- Active Profile Display ---
         active_profile = st.session_state.current_farmer_profile
-        if not st.session_state.show_new_profile_form: # Only show if not in new profile mode
+        if not st.session_state.show_new_profile_form:
             st.markdown("---")
             if active_profile and isinstance(active_profile, dict):
                 st.subheader(ui_translator("active_profile_header"))
@@ -1952,11 +1795,10 @@ def main():
                 st.write(f"**{ui_translator('active_profile_loc')}:** {loc_str}")
                 st.write(f"**{ui_translator('active_profile_soil')}:** {soil_disp}")
                 st.write(f"**{ui_translator('active_profile_size')}:** {size_str}")
-            elif not st.session_state.show_new_profile_form: # Double check not showing new form
+            elif not st.session_state.show_new_profile_form:
                  st.info(ui_translator("no_profile_loaded_info"))
 
 
-    # ================== MAIN CONTENT AREA ==================
     st.title(ui_translator("page_title"))
     st.caption(ui_translator("page_caption"))
     st.divider()
@@ -1964,9 +1806,8 @@ def main():
     if not st.session_state.current_farmer_profile:
         st.warning(ui_translator("profile_error"))
     else:
-        # Profile Loaded: Show Tabs
         farmer_name = st.session_state.current_farmer_profile.get('name', ui_translator("unknown_farmer"))
-        profile_language = st.session_state.current_farmer_profile.get('language', "English") # Language for TTS
+        profile_language = st.session_state.current_farmer_profile.get('language', "English")
 
         tab_chat_label = ui_translator("tab_new_chat")
         tab_history_label = ui_translator("tab_past_interactions")
@@ -1974,21 +1815,18 @@ def main():
 
         tab1, tab2, tab3 = st.tabs([tab_chat_label, tab_history_label, tab_edit_label])
 
-        # --- Tab 1: New Chat ---
         with tab1:
             st.header(ui_translator("main_header"))
 
-            # --- Display Chat History ---
             for i, message in enumerate(st.session_state.chat_history):
                 role = "user" if isinstance(message, HumanMessage) else "assistant"
                 with st.chat_message(role):
-                    st.markdown(message.content) # Render content as markdown
+                    st.markdown(message.content)
 
-                    # --- Add TTS Button ---
                     if role == "assistant" and message.content and not message.content.startswith(f"{ui_translator('system_error_label')}:"):
                         if GTTS_AVAILABLE:
-                            tts_lang_code = get_tts_lang_code(profile_language) # Use farmer's pref lang for TTS
-                            button_key = f"tts_button_{i}_{role}" # More unique key
+                            tts_lang_code = get_tts_lang_code(profile_language)
+                            button_key = f"tts_button_{i}_{role}"
 
                             if tts_lang_code:
                                 if st.button(ui_translator("tts_button_label"), key=button_key, help=ui_translator("tts_button_tooltip", lang=profile_language)):
@@ -2003,20 +1841,18 @@ def main():
                                         st.error(ui_translator("tts_error_generation", err=str(e)))
                                         logger.error(f"TTS Button Click Error: {e}", exc_info=True)
                             else:
-                                st.caption(f"({ui_translator('tts_error_unsupported_lang', lang=profile_language)})") # Small text indication
+                                st.caption(f"({ui_translator('tts_error_unsupported_lang', lang=profile_language)})")
                         else:
                             st.caption(f"({ui_translator('tts_error_library_missing')})")
 
-            # --- Chat Input Box ---
             if prompt := st.chat_input(ui_translator("query_label"), key="main_chat_input_widget"):
                 logger.info(f"User query: '{prompt}'")
                 st.session_state.chat_history.append(HumanMessage(content=prompt))
 
-                # --- Process Request ---
                 gemini_key_present = bool(st.session_state.get("widget_gemini_key_input", "").strip())
                 if not gemini_key_present:
                     err_msg_chat = ui_translator("gemini_key_error")
-                    st.error(err_msg_chat) # Error above input
+                    st.error(err_msg_chat)
                     st.session_state.chat_history.append(AIMessage(content=f"{ui_translator('system_error_label')}: {err_msg_chat}"))
                     st.rerun()
                 else:
@@ -2024,7 +1860,7 @@ def main():
                     llm = initialize_llm(current_gemini_key)
 
                     if llm:
-                        output_lang = st.session_state.selected_language # Respond in CURRENTLY selected site language
+                        output_lang = st.session_state.selected_language
                         current_weather_key = st.session_state.get("widget_weather_key_input","").strip()
 
                         with st.spinner(ui_translator("thinking_spinner", lang=output_lang)):
@@ -2032,7 +1868,7 @@ def main():
                                 result = process_farmer_request(
                                     farmer_profile=st.session_state.current_farmer_profile,
                                     current_query=prompt,
-                                    chat_history=st.session_state.chat_history, # Pass full history including new prompt
+                                    chat_history=st.session_state.chat_history,
                                     llm=llm,
                                     weather_api_key=current_weather_key,
                                     output_language=output_lang
@@ -2048,35 +1884,29 @@ def main():
                                 st.error(error_msg_runtime)
                                 st.session_state.chat_history.append(AIMessage(content=f"{ui_translator('system_error_label')}: {error_msg_runtime}"))
 
-                        # Rerun to display new user msg and AI response/error
                         st.rerun()
                     else:
-                        # LLM init failed, error already shown in sidebar/initialize_llm
-                        init_error_msg = ui_translator("llm_init_error") # Get translated msg again
+                        init_error_msg = ui_translator("llm_init_error")
                         st.session_state.chat_history.append(AIMessage(content=f"{ui_translator('system_error_label')}: {init_error_msg}"))
                         st.rerun()
 
-        # --- Tab 2: Past Interactions Log ---
         with tab2:
             display_past_interactions(farmer_name)
 
-        # --- Tab 3: Edit Profile ---
         with tab3:
             st.header(ui_translator("edit_profile_header", name=farmer_name))
             current_profile = st.session_state.get('current_farmer_profile')
             if not current_profile:
                  st.warning(ui_translator("profile_error"))
             else:
-                # Show map for reference, centered on current loc, but don't update ref state on click
                 handle_map_interaction_reference(
                      map_key="edit_profile_map",
                      center=[current_profile.get('latitude', MAP_DEFAULT_LAT), current_profile.get('longitude', MAP_DEFAULT_LON)],
                      zoom=MAP_CLICK_ZOOM if (current_profile.get('latitude', 0.0) != 0.0 or current_profile.get('longitude', 0.0) != 0.0) else 5,
-                     allow_click_updates=False # Clicks here don't update the sidebar reference
+                     allow_click_updates=False
                 )
 
                 with st.form("edit_profile_form", clear_on_submit=False):
-                    # Name is not editable
                     st.text_input(ui_translator("profile_name_edit_label"), value=current_profile.get('name', ''), key="edit_form_name_display", disabled=True)
 
                     st.markdown(f"**{ui_translator('selected_coords_label')}**")
@@ -2113,24 +1943,22 @@ def main():
 
                              if isinstance(updated_db_edit, pd.DataFrame):
                                  save_farmer_db(updated_db_edit)
-                                 reloaded_profile = find_farmer(updated_db_edit, profile_name_to_update) # Reload updated data
+                                 reloaded_profile = find_farmer(updated_db_edit, profile_name_to_update)
                                  if reloaded_profile:
-                                     st.session_state.current_farmer_profile = reloaded_profile # Update session state
+                                     st.session_state.current_farmer_profile = reloaded_profile
                                      st.success(ui_translator("profile_updated_success", name=profile_name_to_update))
                                      logger.info(f"Profile updated successfully for '{profile_name_to_update}'.")
 
-                                     # Sync site language if preference changed
                                      new_language_pref = reloaded_profile.get('language', 'English')
                                      lang_changed_on_edit = False
                                      if new_language_pref != st.session_state.selected_language:
                                          if new_language_pref in translations:
-                                             st.session_state.selected_language = new_language_pref # Update app state
+                                             st.session_state.selected_language = new_language_pref
                                              lang_changed_on_edit = True
                                              logger.info(f"App language sync to '{new_language_pref}' after profile edit for {profile_name_to_update}.")
                                          else:
                                               logger.warning(f"Edited profile '{profile_name_to_update}' invalid lang '{new_language_pref}', keeping site lang {st.session_state.selected_language}.")
 
-                                     # Update map center state
                                      new_lat = reloaded_profile.get('latitude', PROFILE_DEFAULT_LAT); new_lon = reloaded_profile.get('longitude', PROFILE_DEFAULT_LON)
                                      if new_lat != 0.0 or new_lon != 0.0: st.session_state.map_center = [new_lat, new_lon]; st.session_state.map_zoom = MAP_CLICK_ZOOM
                                      else: st.session_state.map_center = [MAP_DEFAULT_LAT, MAP_DEFAULT_LON]; st.session_state.map_zoom = 5
@@ -2146,12 +1974,10 @@ def main():
                                 st.error(ui_translator("db_update_error_on_save") + " (Update)")
 
 
-# --- Entry Point ---
 if __name__ == "__main__":
     logger.info("--- Starting Krishi-Sahayak AI Streamlit App ---")
-    # Ensure data directory exists (optional but good practice)
     data_dir = os.path.dirname(FARMER_CSV_PATH)
-    if data_dir and data_dir != "." and not os.path.exists(data_dir): # Handle case where path is just filename
+    if data_dir and data_dir != "." and not os.path.exists(data_dir):
         try:
              os.makedirs(data_dir)
              logger.info(f"Created data directory: {data_dir}")
