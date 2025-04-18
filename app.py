@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 import logging
 from collections import defaultdict
 import io
-
 import folium
 from folium.plugins import Geocoder
 
@@ -1797,6 +1796,10 @@ def main():
                 st.write(f"**{ui_translator('active_profile_size')}:** {size_str}")
             elif not st.session_state.show_new_profile_form:
                  st.info(ui_translator("no_profile_loaded_info"))
+
+        # --- Modified Line ---
+        st.markdown("<p style='font-size: x-small;'>Made By Advait Kawale</p>", unsafe_allow_html=True)
+        # --- End of Modification ---
 
 
     st.title(ui_translator("page_title"))
