@@ -1,17 +1,3 @@
-Google Gemini API Keys :-
-
-AIzaSyADl4G5aVaq3xw73HJiPDalelfqFH_XHCI
-AIzaSyBvx7uEa_JvFsnwyoubw380dg4HUOr9ASY
-AIzaSyBzlXxId2a40kQA-eiYWAGqPkJDjSdUXwk
-AIzaSyBb-KXLYLyRO4o2TFAeiOQNv4fG54O0GEU
-AIzaSyAxlYjiaWxTYFEUqxExiQ65zb0gGiYOGl8
-AIzaSyCTD7RfMmVTma0XP7o2uBysOreXipWR-pk
-AIzaSyCTHkBJxADynfyDnwvOOHrXj9y-jLP-x0M
-AIzaSyDyfUhcitS-wLxHahWJCIl66NEeB8n0tEc
-AIzaSyAb1ed4pTAIzOgQhOanAIW2ldXY3WXLjnE
-AIzaSyCGIQOMYnRUl-RjKKFJkI9RZcL0xq16uIw
-
-
 OpenWeatherMap API keys :-
 
 7e55011f403673092eb36bc6063ee7ef
