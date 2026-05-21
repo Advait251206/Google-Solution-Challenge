@@ -80,21 +80,23 @@ flowchart TD
     classDef ext fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#E65100;
     classDef voice fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#880E4F;
 
-    A[🌾 Farmer / Local Assistant] :::frontend -->|Interacts & Submits Query| B(💻 Streamlit Responsive UI) :::frontend
-    B -->|Selects Location| C[🗺️ Folium Interactive Map] :::frontend
-    
-    B -->|Triggers GPS Coordinates| D[🌤️ OpenWeatherMap API] :::ext
-    B -->|Reads/Writes Profiles| E[(🗄️ Local Profile Data.csv)] :::database
-    
-    D -->|Real-Time Forecast Feed| F[⚙️ Context Aggregator] :::database
+    A[🌾 Farmer / Local Assistant] -->|Interacts & Submits Query| B(💻 Streamlit Responsive UI)
+    B -->|Selects Location| C[🗺️ Folium Interactive Map]
+    B -->|Triggers GPS Coordinates| D[🌤️ OpenWeatherMap API]
+    B -->|Reads/Writes Profiles| E[(🗄️ Local Profile Data.csv)]
+    D -->|Real-Time Forecast Feed| F[⚙️ Context Aggregator]
     E -->|Active Farmer Profile Context| F
     B -->|Retrieves Chat History| F
-    
-    F -->|Formatted LangChain System Message| G[🧠 Google Gemini AI Engine] :::ai
+    F -->|Formatted LangChain System Message| G[🧠 Google Gemini AI Engine]
     G -->|Tailored Agricultural Advice| B
-    
-    B -->|Converts Text Advice to Audio| H[🔊 gTTS Audio Synthesizer] :::voice
+    B -->|Converts Text Advice to Audio| H[🔊 gTTS Audio Synthesizer]
     H -->|Plays Regional Speech Accents| A
+
+    class A,B,C frontend;
+    class E,F database;
+    class G ai;
+    class D ext;
+    class H voice;
 ```
 
 ---
